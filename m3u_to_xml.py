@@ -2,127 +2,84 @@ import wget
 
 example2 = r"C:\Users\hcps-mulderlr\dev\examples\playlist2.m3u"
 
-
 #locating the data in the m3u file
 with open(example2, "r") as file2:
     text = file2.read()
-
     
-    startSub = "<title>"
-    startTitle = []
-    start = 0
-    while(index := text.find(startSub, start)) != -1:
-        startTitle.append(index)
-        start = index + len(startSub)
+    # Split into entries based on #EXTVDJ lines
+    entries = []
+    lines = text.split('\n')
+    current_entry = []
     
-    endSub = "</title>"
-    endTitle = []
-    start = 0
-    while(index := text.find(endSub, start)) != -1:
-        endTitle.append(index)
-        start = index + len(endSub)
+    for line in lines:
+        line = line.strip()
+        if line.startswith('#EXTVDJ:'):
+            if current_entry:
+                entries.append('\n'.join(current_entry))
+            current_entry = [line]
+        elif line and current_entry:
+            current_entry.append(line)
     
-    startSubA = "<artist>"
-    startArtist = []
-    start = 0
-    while(index := text.find(startSubA, start)) != -1:
-        startArtist.append(index)
-        start = index + len(startSubA)
+    if current_entry:
+        entries.append('\n'.join(current_entry))
     
-    endSubA = "</artist>"
-    endArtist = []
-    start = 0
-    while(index := text.find(endSubA, start)) != -1:
-        endArtist.append(index)
-        start = index + len(endSubA)
+    # Function to escape XML characters
+    def escape_xml(text):
+        if not text:
+            return ''
+        text = str(text)
+        text = text.replace('&', '&amp;')
+        text = text.replace('<', '&lt;')
+        text = text.replace('>', '&gt;')
+        text = text.replace('"', '&quot;')
+        text = text.replace("'", '&apos;')
+        return text
     
-    startSubT = "<time>"
-    startTime = []
-    start = 0
-    while(index := text.find(startSubT, start)) != -1:
-        startTime.append(index)
-        start = index + len(startSubT)
-    
-    endSubT = "</time>"
-    endTime = []
-    start = 0
-    while(index := text.find(endSubT, start)) != -1:
-        endTime.append(index)
-        start = index + len(endSubT)
-    
-    startSubF = "<filesize>"
-    startSize = []
-    start = 0
-    while(index := text.find(startSubF, start)) != -1:
-        startSize.append(index)
-        start = index + len(startSubF)
-    
-    endSubF = "</filesize>"
-    endSize = []
-    start = 0
-    while(index := text.find(endSubF, start)) != -1:
-        endSize.append(index)
-        start = index + len(endSubF)
-    
-    startSubFT = "</title>"
-    startFT = []
-    start = 0
-    while(index := text.find(startSubFT, start)) != -1:
-        startFT.append(index)
-        start = index + len(startSubFT)
-    
-    endSubFT = "#"
-    endFT = []
-    start = 0
-    while(index := text.find(endSubFT, start)) != -1:
-        endFT.append(index)
-        start = index + len(endSubFT)
-    endFT.remove(0)
-    
-
+    # Function to extract value between tags
+    def extract_tag_value(text, tag):
+        start_tag = f"<{tag}>"
+        end_tag = f"</{tag}>"
+        start_idx = text.find(start_tag)
+        if start_idx == -1:
+            return ""
+        start_idx += len(start_tag)
+        end_idx = text.find(end_tag, start_idx)
+        if end_idx == -1:
+            return ""
+        return text[start_idx:end_idx]
     
     #writing the start of the file
     xmlFile = open("example2.xml", "w")
-    xmlFile.write("<?xml version='1.0' encoding='UTF-8'?>\n<DJ_PLAYLISTS Version='1.0.0'>\n<PRODUCT Name='rekordbox' Version='5.6.1' Company='Pioneer DJ'/>\n<COLLECTION Entries='" + str(len(startTitle)) + "'>\n")
+    xmlFile.write("<?xml version='1.0' encoding='UTF-8'?>\n<DJ_PLAYLISTS Version='1.0.0'>\n<PRODUCT Name='rekordbox' Version='5.6.1' Company='Pioneer DJ'/>\n<COLLECTION Entries='" + str(len(entries)) + "'>\n")
     
     #getting the data
-    for i in range(len(startTitle)):
-        title = text[startTitle[i] + len(startSub):endTitle[i]]
-
-        artist = text[startArtist[i] + len(startSubA):endArtist[i]]
-
-        time = text[startTime[i] + len(startSubT):endTime[i]]
-
-        size = text[startSize[i] + len(startSubF):endSize[i]]
-        fileLocation = text[startFT[i] + len(startSubFT):endFT[i]]
+    for i, entry in enumerate(entries):
+        # Extract metadata from each entry
+        title = extract_tag_value(entry, "title")
+        artist = extract_tag_value(entry, "artist")
+        time = extract_tag_value(entry, "time")
+        size = extract_tag_value(entry, "filesize")
         
-        # reset file location
-        fileLocation = fileLocation.strip()
-        # Function to escape XML characters
-        def escape_xml(text):
-            if not text:
-                return ''
-            text = str(text)
-            text = text.replace('&', '&amp;')
-            text = text.replace('<', '&lt;')
-            text = text.replace('>', '&gt;')
-            text = text.replace('"', '&quot;')
-            text = text.replace("'", '&apos;')
-            return text
-        # Escape XML characters
-        title = escape_xml(title)
-        artist = escape_xml(artist)
-        time = escape_xml(time)
-        size = escape_xml(size)
-        fileLocation = escape_xml(fileLocation)
+        # Extract file location (last line that's not a #EXTVDJ line)
+        entry_lines = entry.split('\n')
+        fileLocation = ""
+        for line in reversed(entry_lines):
+            line = line.strip()
+            if line and not line.startswith('#') and (':\\' in line or line.startswith('/')):
+                fileLocation = line
+                break
         
-        print(startTitle)
-        print(endTitle)
-        print(str(title))
-        print(str(artist))
+        # Clean up and escape XML characters
+        title = escape_xml(title.strip())
+        artist = escape_xml(artist.strip())
+        time = escape_xml(time.strip())
+        size = escape_xml(size.strip())
+        fileLocation = escape_xml(fileLocation.strip())
+        
+        print(title)
         
         #printing out the data
-        # print("Title:" + str(title) + "\nArtist: " + str(artist) + "\nDuration: " + str(time) + "\nSize: " + str(size) + "\n" + "\nFile Location: " + str(fileLocation) + "\n")
+        print("Title:" + str(title) + "\nArtist: " + str(artist) + "\nDuration: " + str(time) + "\nSize: " + str(size) + "\n" + "\nFile Location: " + str(fileLocation) + "\n")
         
         xmlFile.write("<TRACK TrackID='" + str(i+1) + "' Name='" + str(title) + "' Artist='" + str(artist) + "' TotalTime='" + str(time) + "' Size='" + str(size) + "' Location='" + str(fileLocation) + "'>\n</TRACK>\n")
     
